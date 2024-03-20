@@ -1,5 +1,5 @@
 # Plots the results from the 2023-24 Norwegian Chemical Society Survey in an interactive Shiny application
-# Illimar Rekand, 2023
+# Illimar Rekand, 2023-24
 # email: illimar.rekand@gmail.com
 
 library(gsheet)
@@ -19,25 +19,21 @@ sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, n
 class(sheet)
 
 ################################################################################################################
-################################################ Shiny application #############################################
+################################################ Testing plots #################################################
 ################################################################################################################
 
 
 sheet.NA.rm <- subset(sheet, !is.na(sheet$Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.))
 nrow(sheet.NA.rm)
 
-ggplot(sheet.NA.rm, aes(x = fct_rev(fct_infreq(sheet.NA.rm$Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.)))) + 
+ggplot(sheet.NA.rm, aes_string(x = fct_rev(fct_infreq("Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.")))) + 
   geom_bar() + 
   coord_flip() + 
   theme_classic() #fct_infreq = order by count, fct_rev = reverse order
 
-
-#ggplot(sheet, aes(x = fct_rev(fct_infreq(sheet[[4]])))) + 
-#  geom_bar() + 
-#  coord_flip() + 
-#  theme_classic() #fct_infreq = order by count, fct_rev = reverse order
-
-
+################################################################################################################
+################################################ Shiny #########################################################
+################################################################################################################
 
 ui <- fluidPage(
   
@@ -53,7 +49,7 @@ ui <- fluidPage(
       # Input: Selector for variable to plot against count ----
       # The below variables will be output as character strings
       selectInput("variable", "Variable:",
-                  c("View count" = "fields.view_count" #currently only one input selectable, other countables have missing data
+                  c("You are..." = "Du.er...You.are.....Vennligst.spesifiser.tilh.U.00F8.righet.og.arbeidstittel.om.du.velger..Other....Please.specify.your.affiliation.and.job.description.if.you.choose..Other.." #currently only one input selectable, other countables have missing data
                   )),
       downloadButton('downloadPlot')
       
@@ -66,7 +62,7 @@ ui <- fluidPage(
       h3(textOutput("caption")),
       
       # Output: Plot of the requested variable against count ----
-      plotOutput("ebi.plot")
+      plotOutput("nks.plot")
       
       
     )
@@ -76,7 +72,7 @@ ui <- fluidPage(
 server <- function(input, output) { #shiny passes selectInput as a string. To use these variables for subsetting dataframes, use e.g. df$!!sym(input$variable) or df[[input$variable]]
   
   formulaText <- reactive({
-    paste("Entries to the PRIDE database from Norwegian institutions")
+    paste("Placeholder1")
   })
   
   # Return the formula text for printing as a caption ----
@@ -84,29 +80,33 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     formulaText()
   })
   
-  # Render slider input for certain plots
-  
   
   # Generate a plot of the requested variable against count ----
   bar_plot.reactive <- reactive({
-    df.unpackt <- unpack.df(datasets.df, input$variable) #unpacks the lists
-    df.unpackt[[input$variable]] <- as.numeric(df.unpackt[[input$variable]]) #convert from char to numeric
-    plot.df <- df.unpackt
-    ggplot(plot.df, #sort bars after count, lowest to highest
-           aes(reorder(x = id, !!sym(input$variable)), y = !!sym(input$variable)))+ #input$variable is a string, !!sym() converts them into symbols
-      geom_point() + #fill-component in aes needs to be declared here, because it is not compatible with aes_string ##this is probably not necessary after all with the impl of !!sym(), but we will keep it to make it easier to read
-      geom_segment( aes(x=id, xend=id, y=0, yend=!!sym(input$variable))) +
-      ylab(paste(str_to_title( #Capitalize first words
-        sub("_", " ", #replace underscores with spaces
-            substring(input$variable, 8, nchar(input$variable)))))) +
-      xlab("PRIDE entry ID") +
-      theme_classic() + #remove gridline
-      theme(axis.text.x = element_text(angle = -45)) +
-      scale_fill_brewer(palette = "Paired")
-    #theme(legend.position = "none") # No legend
+    sheet.NA.rm[[input$variable]] <- factor(sheet.NA.rm[[input$variable]])
+    ggplot(sheet.NA.rm, aes_string(x = input$variable)) + 
+      geom_bar() + 
+      coord_flip() + 
+      theme_classic() #fct_infreq = order by count, fct_rev = reverse order
+    
+#    df.unpackt <- unpack.df(datasets.df, input$variable) #unpacks the lists
+#    df.unpackt[[input$variable]] <- as.numeric(df.unpackt[[input$variable]]) #convert from char to numeric
+#    plot.df <- df.unpackt
+#    ggplot(plot.df, #sort bars after count, lowest to highest
+#           aes(reorder(x = id, !!sym(input$variable)), y = !!sym(input$variable)))+ #input$variable is a string, !!sym() converts them into symbols
+#      geom_point() + #fill-component in aes needs to be declared here, because it is not compatible with aes_string ##this is probably not necessary after all with the impl of !!sym(), but we will keep it to make it easier to read
+#      geom_segment( aes(x=id, xend=id, y=0, yend=!!sym(input$variable))) +
+#      ylab(paste(str_to_title( #Capitalize first words
+#        sub("_", " ", #replace underscores with spaces
+#            substring(input$variable, 8, nchar(input$variable)))))) +
+#      xlab("PRIDE entry ID") +
+#      theme_classic() + #remove gridline
+#      theme(axis.text.x = element_text(angle = -45)) +
+#      scale_fill_brewer(palette = "Paired")
+#    #theme(legend.position = "none") # No legend
   })
   
-  output$ebi.plot <- renderPlot(
+  output$nks.plot <- renderPlot(
     { #The fields below are sorted chronologically, not after count5
       bar_plot.reactive()
     }
@@ -115,7 +115,7 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   
   output$downloadPlot <- downloadHandler(
     filename <- function()
-    {paste0("PRIDE-plot-",input$variable,".png")},
+    {paste0("NKS-plot-",input$variable,".png")},
     content <- function(file){
       png(file=file)
       plot(bar_plot.reactive())
