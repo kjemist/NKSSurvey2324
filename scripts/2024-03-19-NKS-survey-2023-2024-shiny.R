@@ -5,7 +5,6 @@
 library(gsheet)
 library(shiny)
 library(ggplot2)
-library(dplyr)
 library(forcats) #fct
 
 ################################################################################################################
@@ -16,7 +15,6 @@ url <- "https://docs.google.com/spreadsheets/d/1V9dOSDzO3R1mZLjk7YfDdpjHgdydSSJt
 
 sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, na.strings=c("","NA")) #emptry rows set to NA
 
-class(sheet)
 
 ################################################################################################################
 ################################################ Testing plots #################################################
@@ -24,9 +22,10 @@ class(sheet)
 
 
 sheet.NA.rm <- subset(sheet, !is.na(sheet$Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.))
+nrow(sheet)
 nrow(sheet.NA.rm)
 
-ggplot(sheet.NA.rm, aes_string(x = fct_rev(fct_infreq("Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.")))) + 
+ggplot(sheet.NA.rm, aes(x = fct_rev(fct_infreq(sheet.NA.rm$Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.)))) + 
   geom_bar() + 
   coord_flip() + 
   theme_classic() #fct_infreq = order by count, fct_rev = reverse order
@@ -49,8 +48,8 @@ ui <- fluidPage(
       # Input: Selector for variable to plot against count ----
       # The below variables will be output as character strings
       selectInput("variable", "Variable:",
-                  c("You are..." = "Du.er...You.are.....Vennligst.spesifiser.tilh.U.00F8.righet.og.arbeidstittel.om.du.velger..Other....Please.specify.your.affiliation.and.job.description.if.you.choose..Other.." #currently only one input selectable, other countables have missing data
-                  )),
+                  choices = names(sheet.NA.rm)
+                    ),
       downloadButton('downloadPlot')
       
     ),
@@ -83,8 +82,8 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   
   # Generate a plot of the requested variable against count ----
   bar_plot.reactive <- reactive({
-    sheet.NA.rm[[input$variable]] <- factor(sheet.NA.rm[[input$variable]])
-    ggplot(sheet.NA.rm, aes_string(x = input$variable)) + 
+    sheet.NA.rm <- subset(sheet, !is.na(sheet[[input$variable]]))
+    ggplot(sheet.NA.rm, aes(x = fct_rev(fct_infreq(!!sym(input$variable))))) + 
       geom_bar() + 
       coord_flip() + 
       theme_classic() #fct_infreq = order by count, fct_rev = reverse order
