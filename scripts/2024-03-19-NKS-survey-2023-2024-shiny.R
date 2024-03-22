@@ -13,7 +13,7 @@ library(forcats) #fct
 
 url <- "https://docs.google.com/spreadsheets/d/1V9dOSDzO3R1mZLjk7YfDdpjHgdydSSJtFCRBCYvKORI/edit#gid=901015046"
 
-sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, na.strings=c("","NA")) #emptry rows set to NA
+sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, na.strings=c("","NA")) #emptry rows set to NAhttp://127.0.0.1:38813/graphics/plot_zoom_png?width=1920&height=1009
 
 
 ################################################################################################################
@@ -21,12 +21,12 @@ sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, n
 ################################################################################################################
 
 
-sheet.NA.rm <- subset(sheet, !is.na(sheet$Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.))
-nrow(sheet)
+sheet.NA.rm <- subset(sheet, !is.na(sheet$Du.er...You.are.....Annotert.Illimar...Vennligst.spesifiser.tilh.U.00F8.righet.og.arbeidstittel.om.du.velger..Other....Please.specify.your.affiliation.and.job.description.if.you.choose..Other..))
 nrow(sheet.NA.rm)
 
-ggplot(sheet.NA.rm, aes(x = fct_rev(fct_infreq(sheet.NA.rm$Hva.er.navnet.p.U.00E5..bedriften.du.jobber.i....What.is.the.name.of.the.company.you.work.in.)))) + 
-  geom_bar() + 
+ggplot(sheet.NA.rm, aes(x = fct_rev(fct_infreq(sheet.NA.rm$Du.er...You.are.....Annotert.Illimar...Vennligst.spesifiser.tilh.U.00F8.righet.og.arbeidstittel.om.du.velger..Other....Please.specify.your.affiliation.and.job.description.if.you.choose..Other..)),
+                        )) + 
+  geom_bar(aes(fill= sheet.NA.rm$Er.du.medlem.i.Norsk.Kjemisk.Selskap...Are.you.a.member.of.the.Norwegian.Chemical.Society.)) + 
   coord_flip() + 
   theme_classic() #fct_infreq = order by count, fct_rev = reverse order
 
@@ -48,8 +48,11 @@ ui <- fluidPage(
       # Input: Selector for variable to plot against count ----
       # The below variables will be output as character strings
       selectInput("variable", "Variable:",
-                  choices = names(sheet.NA.rm)
+                  choices = names(sheet.NA.rm) #all column names
                     ),
+      selectInput("fill_value", "Fill:",
+                  choices = c("None", names(sheet.NA.rm)) #Adds a none for when filling is not necessary
+      ),
       downloadButton('downloadPlot')
       
     ),
@@ -84,7 +87,10 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   bar_plot.reactive <- reactive({
     sheet.NA.rm <- subset(sheet, !is.na(sheet[[input$variable]]))
     ggplot(sheet.NA.rm, aes(x = fct_rev(fct_infreq(!!sym(input$variable))))) + 
-      geom_bar() + 
+      geom_bar(
+        if(input$fill_value == "None"){} #if fill is "None", then fill with no colour
+               else {aes(fill=!!sym(input$fill_value))}
+        )+ 
       coord_flip() + 
       theme_classic() #fct_infreq = order by count, fct_rev = reverse order
     
