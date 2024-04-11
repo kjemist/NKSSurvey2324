@@ -103,15 +103,15 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   bar_plot.reactive <- reactive({
     
     #fix caption from column title
-    caption.txt <- input$variable #spaces have been converted to ".". Below we fix this.
-    caption.txt <- gsub(pattern = "1\\.5", replacement = "1 to 5", x = caption.txt) # "." means any character. This is why we use "\\." instead
-    caption.txt <- gsub(pattern = "\\.\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
-    caption.txt <- gsub(pattern = "\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
-    caption.txt <- paste0(substring(caption.txt, 1, nchar(caption.txt)-1), "?") #it's nice to have a question mark at the end of a question
+    caption.txt <<- input$variable #spaces have been converted to ".". Below we fix this.
+    caption.txt <<- input$variable #spaces have been converted to ".". Below we fix this.
+    caption.txt <<- gsub(pattern = "1\\.5", replacement = "1 to 5", x = caption.txt) # "." means any character. This is why we use "\\." instead
+    caption.txt <<- gsub(pattern = "\\.\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
+    caption.txt <<- gsub(pattern = "\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
+    caption.txt <<- paste0(substring(caption.txt, 1, nchar(caption.txt)-1), "?") #it's nice to have a question mark at the end of a question
     
     #scale-question parameters
     scale.question <- grepl(x = input$variable, pattern = "scale", ignore.case = TRUE) #is this a question with a ranking from 1-5?
-    
     
     #unpack lists (cells with multiple values)
     cells.w.multiple.value <- any(grepl(pattern = ",", x = sheet[[input$variable]]))
@@ -133,15 +133,16 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     
     # let's plot
     ggplot(
-      sheet.NA.rm, aes(x = if (scale.question==TRUE){as.character(sheet.NA.rm[[input$variable]])}
-                       else {fct_rev(fct_infreq(as.character(sheet.NA.rm[[input$variable]])))}
+      sheet.NA.rm, aes(x = if (scale.question==TRUE){as.character(.data[[input$variable]])} #numerical values from scale-questions are converted to text
+                       else {fct_rev(fct_infreq(as.character(.data[[input$variable]])))}
                        ))+ #fct_infreq = order by count, fct_rev = reverse order. Scale questions should not be ordered by count, and needs to converted to character type
+    
       geom_bar(
         if(input$fill_value == "None"){} #if fill is "None", then fill with no color
                else {aes(fill=
-                           if(scale.question){as.character(!!sym(input$fill_value))}
+                           if(scale.question){as.character(!!sym(input$fill_value))} 
                          else{!!sym(input$fill_value)}
-                         )
+                         ) 
                  }
         ) +
       geom_text(stat='count', aes(label=..count..), vjust=if(scale.question==FALSE){0}else{-1}, hjust=if(scale.question==FALSE){-0.5}else{0}) +
@@ -170,7 +171,7 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
       paste0("NKS-plot-",input$variable,"-facet-wrap-",input$fill_value, ".png")
     }else
     {
-      paste0("NKS-plot-",input$variable,".png")
+      paste0("NKS-plot-",input$variable,"fill-value", input$fill_value, ".png")
     }
       },
     content <- function(file){
