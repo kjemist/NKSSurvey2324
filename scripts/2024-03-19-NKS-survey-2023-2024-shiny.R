@@ -2,6 +2,7 @@
 # Illimar Rekand, 2023-24
 # email: illimar.rekand@gmail.com
 
+
 library(gsheet)
 library(shiny)
 library(ggplot2)
@@ -9,12 +10,25 @@ library(forcats) #fct_infreq
 library(dplyr)
 library(tidyverse)
 library(ggtext) # fix ggtitle width
+library(tm)
+
+################################################################################################################
+################################################ Functions #####################################################
+################################################################################################################
+
+format_header <<- function(header.txt){
+  caption.txt <- header.txt #spaces have been converted to ".". Below we fix this.
+  caption.txt <- gsub(pattern = "1\\.5", replacement = "1 to 5", x = caption.txt) # "." means any character. This is why we use "\\." instead
+  caption.txt <- gsub(pattern = "\\.\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
+  caption.txt <- gsub(pattern = "\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
+  caption.txt <- paste0(substring(caption.txt, 1, nchar(caption.txt)-1), "?") #it's nice to have a question mark at the end of a question, also remove space at end of sentenc
+  return(caption.txt)
+}
 
 ################################################################################################################
 ################################################ Extracting data ###############################################
 ################################################################################################################
 
-#url <- "https://docs.google.com/spreadsheets/d/1V9dOSDzO3R1mZLjk7YfDdpjHgdydSSJtFCRBCYvKORI/edit#gid=901015046"
 url <- "https://docs.google.com/spreadsheets/d/15s7zeTEFT-fShou_jVYaHZHT3_9IvF6rgluUUdWy29Q/edit#gid=0"
 sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, na.strings=c("","NA")) #emptry rows set to NAhttp://127.0.0.1:38813/graphics/plot_zoom_png?width=1920&height=1009
 
@@ -48,6 +62,9 @@ ggplot(sheet.NA.rm, aes(x = if (scale.question==TRUE){as.character(sheet.NA.rm[[
 ################################################ Shiny #########################################################
 ################################################################################################################
 
+#Update colnames
+
+
 ui <- bootstrapPage(
   
   # App title ----
@@ -68,9 +85,7 @@ ui <- bootstrapPage(
                   choices = c("None", names(sheet)) #Adds a none for when filling is not necessary
       ),
       checkboxInput("facet.wrap", "Facet Wrap?", value = FALSE),
-      conditionalPanel(condition = "input.facet.wrap == true",
-        numericInput('n_facet', 'Number of top facets', 4, min = 1, max = 7)
-      ),
+        numericInput('n_facet', 'Number of top facets', 6, min = 1, max = 7),
       downloadButton('downloadPlot')
     ),
     
@@ -100,21 +115,35 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   
   
   # Generate a plot of the requested variable against count ----
+  if(grepl(x = caption.txt, pattern = "If you answered ")){
+    #prepare Corpus from words
+    text <- sheet[[input$variable]]
+    print(text)
+    docs <- Corpus(VectorSource(text))
+    print(docs)
+    docs <- tm_map(docs, removeWords, stopwords("Norwegian")) #remove common words
+    dtm <- TermDocumentMatrix(docs) #reformat
+    matrix <- as.matrix(dtm) #reformat
+    words <- sort(rowSums(matrix),decreasing=TRUE) 
+    df <- data.frame(word = names(words),freq=words)
+    wordcloud_rep <- repeatable(wordcloud)   # Make the wordcloud drawing predictable during a session
+    wordcloud(words = df$word,
+              freq = df$freq,
+              min.freq = 1,
+              random.order=FALSE,
+              rot.per=0.35,
+              colors=brewer.pal(8, "Dark2"))
+  }
+  else{
   bar_plot.reactive <- reactive({
     
-    #fix caption from column title
-    caption.txt <<- input$variable #spaces have been converted to ".". Below we fix this.
-    caption.txt <<- input$variable #spaces have been converted to ".". Below we fix this.
-    caption.txt <<- gsub(pattern = "1\\.5", replacement = "1 to 5", x = caption.txt) # "." means any character. This is why we use "\\." instead
-    caption.txt <<- gsub(pattern = "\\.\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
-    caption.txt <<- gsub(pattern = "\\.", replacement = " ", x = caption.txt) # "." means any character. This is why we use "\\." instead
-    caption.txt <<- paste0(substring(caption.txt, 1, nchar(caption.txt)-1), "?") #it's nice to have a question mark at the end of a question
+    caption.txt <- format_header(input$variable)
     
     #scale-question parameters
     scale.question <- grepl(x = input$variable, pattern = "scale", ignore.case = TRUE) #is this a question with a ranking from 1-5?
     
-    #unpack lists (cells with multiple values)
-    cells.w.multiple.value <- any(grepl(pattern = ",", x = sheet[[input$variable]]))
+    #unpack lists (cells with comma-separated, multiple values)
+    cells.w.multiple.value <- any(grepl(pattern = ",", x = sheet[[input$variable]])) # check if any cells contain a comma
     if (cells.w.multiple.value){
       sheet.unpackt <- sheet %>% separate_longer_delim(!!sym(input$variable), delim = ", ")
       sheet <- sheet.unpackt
@@ -122,8 +151,9 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     
     # remove NA
     sheet.NA.rm <- subset(sheet, !is.na(sheet[[input$variable]]))
-    #handling counts for facetted plots
+    #handling counts for faceted plots
     if(input$facet.wrap){
+      validate(need(input$fill_value != "None", "Please define a fill value"))
     sheet.w.count <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% add_count() #find the counts for each fill value
     count_values <- sort(unique(sheet.w.count$n), decreasing=TRUE) #find unique count values, sorts them high->low
 
@@ -132,32 +162,42 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     }
     
     # let's plot
+
     ggplot(
       sheet.NA.rm, aes(x = if (scale.question==TRUE){as.character(.data[[input$variable]])} #numerical values from scale-questions are converted to text
                        else {fct_rev(fct_infreq(as.character(.data[[input$variable]])))}
                        ))+ #fct_infreq = order by count, fct_rev = reverse order. Scale questions should not be ordered by count, and needs to converted to character type
     
-      geom_bar(
-        if(input$fill_value == "None"){} #if fill is "None", then fill with no color
-               else {aes(fill=
-                           if(scale.question){as.character(!!sym(input$fill_value))} 
-                         else{!!sym(input$fill_value)}
-                         ) 
-                 }
-        ) +
-      geom_text(stat='count', aes(label=..count..), vjust=if(scale.question==FALSE){0}else{-1}, hjust=if(scale.question==FALSE){-0.5}else{0}) +
+        {if(input$fill_value == "None") #if fill is "None", then fill with no color
+          geom_bar(fill="#005691")
+          }+
+        {if(input$fill_value != "None")geom_bar( #if fill is defined as other than none, fill with fill parameters
+            aes(fill=
+                  if(scale.question){as.character(!!sym(input$fill_value))}  #convert scale-numbers (1 to 5) to characters
+                  else{!!sym(input$fill_value)}
+                  ) 
+          )
+            }+ 
+      geom_text(stat='count', size = 9, aes(label=after_stat(count)), vjust=if(scale.question==FALSE){"inward"}else{-1}, hjust=if(scale.question=="inward"){-0.5}else{0}) +
       theme_classic() +
       {if(scale.question==FALSE)coord_flip()} + #scale question should not be coord-flipped.
-      theme(text = element_text(size = 24),
-            plot.title = element_textbox_simple(),
+      {if(scale.question==TRUE&input$facet.wrap==FALSE)geom_vline(xintercept = mean(sheet.NA.rm[[input$variable]]), size = 3)} +
+      labs(title = caption.txt) +
+      theme(text = element_text(size = 26),
+            plot.title = element_textbox_simple(margin = margin(0,0,20,0)), #textbox enables line breaks, margin increased distance betwen plot/title
+            plot.title.position = if(str_length(caption.txt)>50){ "plot"}else{"panel"}, #if question gets too long, place it further left
             legend.title = element_blank(),
             axis.title.y = element_blank(),
+            axis.text.y = element_text(), #face="bold" tested this, not sure if it's nicer
             legend.position=if(input$facet.wrap){"none"}else{"right"}, 
             strip.placement = "outside",
             ) +
-      ggtitle(caption.txt) +
-    {if(input$facet.wrap)facet_wrap(vars(sheet.NA.rm[[input$fill_value]]), ncol = 2)}
+      {if(scale.question==TRUE)xlab("1 = Very little, 5 = Very much")} + #scale question should not be coord-flipped.
+      ylab("Count") +
+      {if(input$facet.wrap)facet_wrap(~sheet.NA.rm[[input$fill_value]], ncol = 2)} #create individual plots
+  
   })
+  } # This bracket is for the else
   
   output$nks.plot <- renderPlot(
     { 
@@ -175,7 +215,7 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     }
       },
     content <- function(file){
-      png(file=file, width = 1000, height = 1000, pointsize = 24) #can we make this work with ggsave? https://stackoverflow.com/questions/14810409/how-to-save-plots-that-are-made-in-a-shiny-app
+      png(file=file, width = 1500, height = 1000, pointsize = 24) #can we make this work with ggsave? https://stackoverflow.com/questions/14810409/how-to-save-plots-that-are-made-in-a-shiny-app probably not worth the hassle (right now)
       plot(bar_plot.reactive())
       dev.off()
     }
