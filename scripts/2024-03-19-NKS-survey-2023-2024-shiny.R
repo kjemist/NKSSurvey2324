@@ -31,7 +31,7 @@ format_header <<- function(header.txt){
 
 url <- "https://docs.google.com/spreadsheets/d/15s7zeTEFT-fShou_jVYaHZHT3_9IvF6rgluUUdWy29Q/edit#gid=0"
 sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, na.strings=c("","NA")) #emptry rows set to NAhttp://127.0.0.1:38813/graphics/plot_zoom_png?width=1920&height=1009
-
+#colnames(sheet) <- format_header(colnames(sheet))
 
 ################################################################################################################
 ################################################ Testing plots #################################################
@@ -41,28 +41,31 @@ columnName <- function(ColumnReference) { #from https://stackoverflow.com/a/1477
   return(substring(deparse(substitute(ColumnReference)),which(strsplit(deparse(substitute(ColumnReference)),"")[[1]]=="$")[1]+1))
 }
 
-col.name.txt <- columnName(sheet$You.are.)
-col.name.fill <- columnName(sheet)
+col.name.txt <- columnName(sheet$On.a.scale.from.1.5..how.interesting.do.you.find.the.publication..Kjemi..is.for.you..)
+col.name.fill <- columnName(sheet$You.are..a..)
+
 col.name.txt.sub <- gsub(pattern = "\\.\\.", replacement = " ", x = col.name.txt)
 col.name.txt.sub <- gsub(pattern = "\\.", replacement = " ", x = col.name.txt.sub)
 
 sheet.NA.rm <- subset(sheet, !is.na(sheet[[col.name.txt]]))
 nrow(sheet.NA.rm)
 
-scale.question <- grepl(x = col.name.txt, pattern = "skala", ignore.case = TRUE)
 
-ggplot(sheet.NA.rm, aes(x = if (scale.question==TRUE){as.character(sheet.NA.rm[[col.name.txt]])}else {fct_rev(fct_infreq(as.character(sheet.NA.rm[[col.name.txt]])))},
-                        )) + 
-  geom_bar(aes(fill= sheet.NA.rm[[col.name.fill]])) + 
-  theme_classic() + #fct_infreq = order by count, fct_rev = reverse order
-  theme(legend.title = element_blank()) +
-  facet_wrap(vars(sheet.NA.rm$What.is.the.name.of.the.company.you.work.in.))
+sheet.individual.means <- sheet.NA.rm %>% group_by(!!sym(col.name.fill)) %>% mutate(avg_score = mean(!!sym(col.name.txt))) %>% group_by(!!sym(col.name.fill))
+scale.question = T
+ggplot(sheet.individual.means, aes(x = if (scale.question==TRUE){as.character(sheet.individual.means[[col.name.txt]])}else {fct_rev(fct_infreq(as.character(sheet.individual.means[[col.name.txt]])))},
+)) + 
+  geom_bar(aes(fill= sheet.individual.means[[col.name.fill]])) + 
+  theme_classic() +
+  theme(legend.title = element_blank()
+        ) +
+  facet_wrap(vars(sheet.individual.means[[col.name.fill]])) +
+  geom_vline(aes(xintercept = sheet.individual.means$avg_score), size = 2, alpha = 0.3) +
+  geom_text(aes( x = 2.5, y = Inf, label = paste("Avg:", format(round(sheet.individual.means$avg_score, 2), nsmall = 2))), check_overlap = TRUE, hjust="inward", vjust ="inward")
 
 ################################################################################################################
 ################################################ Shiny #########################################################
 ################################################################################################################
-
-#Update colnames
 
 
 ui <- bootstrapPage(
@@ -86,6 +89,8 @@ ui <- bootstrapPage(
       ),
       checkboxInput("facet.wrap", "Facet Wrap?", value = FALSE),
         numericInput('n_facet', 'Number of top facets', 6, min = 1, max = 7),
+        numericInput('font_size', 'Font size', 26),
+      numericInput('count_font_size', 'Count font size', 9),
       downloadButton('downloadPlot')
     ),
     
@@ -115,26 +120,26 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   
   
   # Generate a plot of the requested variable against count ----
-  if(grepl(x = caption.txt, pattern = "If you answered ")){
-    #prepare Corpus from words
-    text <- sheet[[input$variable]]
-    print(text)
-    docs <- Corpus(VectorSource(text))
-    print(docs)
-    docs <- tm_map(docs, removeWords, stopwords("Norwegian")) #remove common words
-    dtm <- TermDocumentMatrix(docs) #reformat
-    matrix <- as.matrix(dtm) #reformat
-    words <- sort(rowSums(matrix),decreasing=TRUE) 
-    df <- data.frame(word = names(words),freq=words)
-    wordcloud_rep <- repeatable(wordcloud)   # Make the wordcloud drawing predictable during a session
-    wordcloud(words = df$word,
-              freq = df$freq,
-              min.freq = 1,
-              random.order=FALSE,
-              rot.per=0.35,
-              colors=brewer.pal(8, "Dark2"))
-  }
-  else{
+#  if(grepl(x = caption.txt, pattern = "If you answered ")){
+    ##prepare Corpus from words
+    #text <- sheet[[input$variable]]
+    #print(text)
+    #docs <- Corpus(VectorSource(text))
+    #print(docs)
+    #docs <- tm_map(docs, removeWords, stopwords("Norwegian")) #remove common words
+    #dtm <- TermDocumentMatrix(docs) #reformat
+    #matrix <- as.matrix(dtm) #reformat
+    #words <- sort(rowSums(matrix),decreasing=TRUE) 
+    #df <- data.frame(word = names(words),freq=words)
+    #wordcloud_rep <- repeatable(wordcloud)   # Make the wordcloud drawing predictable during a session
+    #wordcloud(words = df$word,
+              #freq = df$freq,
+              #min.freq = 1,
+              #random.order=FALSE,
+              #rot.per=0.35,
+              #colors=brewer.pal(8, "Dark2"))
+#  }
+#  else{
   bar_plot.reactive <- reactive({
     
     caption.txt <- format_header(input$variable)
@@ -152,6 +157,14 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     # remove NA
     sheet.NA.rm <- subset(sheet, !is.na(sheet[[input$variable]]))
     #handling counts for faceted plots
+    if(input$facet.wrap&scale.question){
+      sheet.individual.means <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% mutate(avg_score = mean(!!sym(input$variable))) %>% group_by(!!sym(input$variable))
+      sheet.NA.rm <- sheet.individual.means
+      sheet.w.count <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% add_count() #find the counts for each fill value
+      count_values <- sort(unique(sheet.w.count$n), decreasing=TRUE) #find unique count values, sorts them high->low
+      sheet.top.n.subset <- subset(sheet.w.count, subset = n %in% count_values[1:input$n_facet] ) # creates a subset of the dataset which contains only the top n counts (n is defined in the shiny app as n_facet)
+      sheet.NA.rm <- sheet.top.n.subset # pipelines the data
+    } else
     if(input$facet.wrap){
       validate(need(input$fill_value != "None", "Please define a fill value"))
     sheet.w.count <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% add_count() #find the counts for each fill value
@@ -178,12 +191,13 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
                   ) 
           )
             }+ 
-      geom_text(stat='count', size = 9, aes(label=after_stat(count)), vjust=if(scale.question==FALSE){"inward"}else{-1}, hjust=if(scale.question=="inward"){-0.5}else{0}) +
+      geom_text(stat='count', size = input$count_font_size, aes(label=after_stat(count)), vjust=if(scale.question==FALSE){"inward"}else{"inward"}, hjust=if(scale.question=="inward"){-0.5}else{0}) +
       theme_classic() +
       {if(scale.question==FALSE)coord_flip()} + #scale question should not be coord-flipped.
-      {if(scale.question==TRUE&input$facet.wrap==FALSE)geom_vline(xintercept = mean(sheet.NA.rm[[input$variable]]), size = 3)} +
+      {if(scale.question==TRUE&input$facet.wrap==FALSE)geom_vline(xintercept = mean(sheet.NA.rm[[input$variable]]), size = 3, alpha = 0.4)} +
+      {if(scale.question==TRUE&input$facet.wrap==FALSE)geom_text(aes( x = 2.5, y = Inf, label = paste("Avg:", format(round(mean(sheet.NA.rm[[input$variable]]), 2), nsmall = 2))), check_overlap = TRUE, hjust=+1, vjust ="inward", size = (input$font_size/3))} +
       labs(title = caption.txt) +
-      theme(text = element_text(size = 26),
+      theme(text = element_text(size = input$font_size),
             plot.title = element_textbox_simple(margin = margin(0,0,20,0)), #textbox enables line breaks, margin increased distance betwen plot/title
             plot.title.position = if(str_length(caption.txt)>50){ "plot"}else{"panel"}, #if question gets too long, place it further left
             legend.title = element_blank(),
@@ -194,10 +208,13 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
             ) +
       {if(scale.question==TRUE)xlab("1 = Very little, 5 = Very much")} + #scale question should not be coord-flipped.
       ylab("Count") +
-      {if(input$facet.wrap)facet_wrap(~sheet.NA.rm[[input$fill_value]], ncol = 2)} #create individual plots
-  
+      # aggregate(sheet.NA.rm$`On a scale from 1 to 5 how interesting do you find the publication Kjemi is for you?`, list(sheet.NA.rm$`You are?`), mean) #calculate individual mean values
+      {if(input$facet.wrap)facet_wrap(~sheet.NA.rm[[input$fill_value]], ncol = 2)} + #create individual plots
+      {if(input$facet.wrap&scale.question)geom_vline(aes(xintercept = sheet.NA.rm$avg_score), size = 2, alpha = 0.3)} +
+      {if(input$facet.wrap&scale.question)geom_text(aes( x = 1.5, y = Inf, label = paste("Avg:", format(round(sheet.NA.rm$avg_score, 2), nsmall = 2))), check_overlap = TRUE, hjust="inward", vjust ="inward", size = (input$font_size/3)) }
+    
   })
-  } # This bracket is for the else
+  #}  This bracket is for the else
   
   output$nks.plot <- renderPlot(
     { 
