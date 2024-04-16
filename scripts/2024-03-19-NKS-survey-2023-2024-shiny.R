@@ -25,13 +25,17 @@ format_header <<- function(header.txt){
   return(caption.txt)
 }
 
-################################################################################################################
+substrRight <- function(x, n){ #from https://stackoverflow.com/a/7963963/11598009
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+
+#############################################################################################
 ################################################ Extracting data ###############################################
 ################################################################################################################
 
 url <- "https://docs.google.com/spreadsheets/d/15s7zeTEFT-fShou_jVYaHZHT3_9IvF6rgluUUdWy29Q/edit#gid=0"
 sheet <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, na.strings=c("","NA")) #emptry rows set to NAhttp://127.0.0.1:38813/graphics/plot_zoom_png?width=1920&height=1009
-#colnames(sheet) <- format_header(colnames(sheet))
+colnames(sheet) <- format_header(colnames(sheet))
 
 ################################################################################################################
 ################################################ Testing plots #################################################
@@ -44,14 +48,16 @@ columnName <- function(ColumnReference) { #from https://stackoverflow.com/a/1477
 col.name.txt <- columnName(sheet$On.a.scale.from.1.5..how.interesting.do.you.find.the.publication..Kjemi..is.for.you..)
 col.name.fill <- columnName(sheet$You.are..a..)
 
-col.name.txt.sub <- gsub(pattern = "\\.\\.", replacement = " ", x = col.name.txt)
-col.name.txt.sub <- gsub(pattern = "\\.", replacement = " ", x = col.name.txt.sub)
+#col.name.txt.sub <- gsub(pattern = "\\.\\.", replacement = " ", x = col.name.txt)
+#col.name.txt.sub <- gsub(pattern = "\\.", replacement = " ", x = col.name.txt.sub)
 
 sheet.NA.rm <- subset(sheet, !is.na(sheet[[col.name.txt]]))
 nrow(sheet.NA.rm)
 
 
 sheet.individual.means <- sheet.NA.rm %>% group_by(!!sym(col.name.fill)) %>% mutate(avg_score = mean(!!sym(col.name.txt))) %>% group_by(!!sym(col.name.fill))
+sheet.NA.rm[[col.name.fill]] <- reorder(sheet.NA.rm[[col.name.fill]], sheet.NA.rm[[col.name.txt]])
+
 scale.question = T
 ggplot(sheet.individual.means, aes(x = if (scale.question==TRUE){as.character(sheet.individual.means[[col.name.txt]])}else {fct_rev(fct_infreq(as.character(sheet.individual.means[[col.name.txt]])))},
 )) + 
@@ -146,9 +152,9 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     
     #scale-question parameters
     scale.question <- grepl(x = input$variable, pattern = "scale", ignore.case = TRUE) #is this a question with a ranking from 1-5?
-    
     #unpack lists (cells with comma-separated, multiple values)
     cells.w.multiple.value <- any(grepl(pattern = ",", x = sheet[[input$variable]])) # check if any cells contain a comma
+    unique.answers <- nrow(subset(sheet, !is.na(sheet[[input$variable]])))
     if (cells.w.multiple.value){
       sheet.unpackt <- sheet %>% separate_longer_delim(!!sym(input$variable), delim = ", ")
       sheet <- sheet.unpackt
@@ -157,8 +163,8 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
     # remove NA
     sheet.NA.rm <- subset(sheet, !is.na(sheet[[input$variable]]))
     #handling counts for faceted plots
-    if(input$facet.wrap&scale.question){
-      sheet.individual.means <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% mutate(avg_score = mean(!!sym(input$variable))) %>% group_by(!!sym(input$variable))
+    if(input$facet.wrap&scale.question){ #calculate the mean values pr group for scale questions
+      sheet.individual.means <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% mutate(avg_score = mean(!!sym(input$variable)), na.rm = TRUE) %>% group_by(!!sym(input$variable)) 
       sheet.NA.rm <- sheet.individual.means
       sheet.w.count <- sheet.NA.rm %>% group_by(!!sym(input$fill_value)) %>% add_count() #find the counts for each fill value
       count_values <- sort(unique(sheet.w.count$n), decreasing=TRUE) #find unique count values, sorts them high->low
@@ -194,9 +200,12 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
       geom_text(stat='count', size = input$count_font_size, aes(label=after_stat(count)), vjust=if(scale.question==FALSE){"inward"}else{"inward"}, hjust=if(scale.question=="inward"){-0.5}else{0}) +
       theme_classic() +
       {if(scale.question==FALSE)coord_flip()} + #scale question should not be coord-flipped.
-      {if(scale.question==TRUE&input$facet.wrap==FALSE)geom_vline(xintercept = mean(sheet.NA.rm[[input$variable]]), size = 3, alpha = 0.4)} +
-      {if(scale.question==TRUE&input$facet.wrap==FALSE)geom_text(aes( x = 2.5, y = Inf, label = paste("Avg:", format(round(mean(sheet.NA.rm[[input$variable]]), 2), nsmall = 2))), check_overlap = TRUE, hjust=+1, vjust ="inward", size = (input$font_size/3))} +
-      labs(title = caption.txt) +
+      {if(scale.question&input$facet.wrap==FALSE)geom_vline(xintercept = mean(sheet.NA.rm[[input$variable]]), size = 3, alpha = 0.4)} +
+      {if(scale.question&input$facet.wrap==FALSE)geom_text(aes( x = 2.5, y = Inf, label = paste("Avg:", format(round(mean(sheet.NA.rm[[input$variable]]), 2), nsmall = 2))), check_overlap = TRUE, hjust=+1, vjust ="inward", size = (input$font_size/3))} +
+      labs(title = caption.txt,
+           subtitle = if(scale.question&input$facet.wrap){paste0("(n=",unique.answers,"/329, Avg:",format(round(mean(sheet.NA.rm[[input$variable]]), 2), nsmall = 2), ")")}
+           else{paste0("(n=",unique.answers,"/329)")}
+             ) +
       theme(text = element_text(size = input$font_size),
             plot.title = element_textbox_simple(margin = margin(0,0,20,0)), #textbox enables line breaks, margin increased distance betwen plot/title
             plot.title.position = if(str_length(caption.txt)>50){ "plot"}else{"panel"}, #if question gets too long, place it further left
@@ -206,12 +215,12 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
             legend.position=if(input$facet.wrap){"none"}else{"right"}, 
             strip.placement = "outside",
             ) +
-      {if(scale.question==TRUE)xlab("1 = Very little, 5 = Very much")} + #scale question should not be coord-flipped.
+      {if(scale.question==TRUE)xlab("1 = Very little, 5 = Very much")} + 
       ylab("Count") +
       # aggregate(sheet.NA.rm$`On a scale from 1 to 5 how interesting do you find the publication Kjemi is for you?`, list(sheet.NA.rm$`You are?`), mean) #calculate individual mean values
-      {if(input$facet.wrap)facet_wrap(~sheet.NA.rm[[input$fill_value]], ncol = 2)} + #create individual plots
+      {if(input$facet.wrap)facet_wrap(.~fct_infreq(sheet.NA.rm[[input$fill_value]]), ncol = 2)} + #create individual plots
       {if(input$facet.wrap&scale.question)geom_vline(aes(xintercept = sheet.NA.rm$avg_score), size = 2, alpha = 0.3)} +
-      {if(input$facet.wrap&scale.question)geom_text(aes( x = 1.5, y = Inf, label = paste("Avg:", format(round(sheet.NA.rm$avg_score, 2), nsmall = 2))), check_overlap = TRUE, hjust="inward", vjust ="inward", size = (input$font_size/3)) }
+      {if(input$facet.wrap&scale.question)geom_text(aes( x = 1.5, y = Inf, label = paste("Group avg:", format(round(sheet.NA.rm$avg_score, 2), nsmall = 2))), check_overlap = TRUE, hjust="inward", vjust ="inward", size = (input$font_size/3)) }
     
   })
   #}  This bracket is for the else
@@ -225,10 +234,10 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
   output$downloadPlot <- downloadHandler(
     filename <- function()
     { if (input$facet.wrap){
-      paste0("NKS-plot-",input$variable,"-facet-wrap-",input$fill_value, ".png")
+      paste0("NKS-plot-",gsub(substrRight(input$variable, 60), pattern = " ", replacement = "_"),"-facet-wrap-",input$fill_value, ".png")
     }else
     {
-      paste0("NKS-plot-",input$variable,"fill-value", input$fill_value, ".png")
+      paste0("NKS-plot-",gsub(substrRight(input$variable, 60), pattern = " ", replacement = "_"),"fill-value-", input$fill_value, ".png")
     }
       },
     content <- function(file){
@@ -242,3 +251,4 @@ server <- function(input, output) { #shiny passes selectInput as a string. To us
 }
 
 shinyApp(ui, server)
+
