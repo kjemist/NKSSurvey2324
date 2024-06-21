@@ -6,4 +6,5 @@ The folder "scripts" contains the R-scripts necessary to analyze and plot the su
 
 The survey was designed by Illimar Rekand as part of a task group created by NKS in 2023, whose goal was to investigate how the organization could renew itself.
 
+See here for slides presenting the survey results:https://zenodo.org/doi/10.5281/zenodo.10989032
 Contact info: illimar.rekand@gmail.com
